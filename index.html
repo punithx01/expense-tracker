@@ -446,6 +446,23 @@
         </div>
 
         <div class="ss">
+            <h3>Sync login (phone ↔ laptop)</h3>
+            <p style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6">
+                This app saves login details per device. Use this token to copy your father’s current login (username + password hash) from his phone and paste it on your laptop.
+            </p>
+            <div class="fg">
+                <label>Your current sync token</label>
+                <input type="text" id="authTokenOut" readonly onclick="this.select()" aria-label="Current login sync token">
+                <button type="button" class="btn-outline" onclick="copyAuthToken()">Copy token</button>
+            </div>
+            <div class="fg">
+                <label>Paste token from another device</label>
+                <input type="text" id="authTokenIn" placeholder="Paste token here" autocomplete="off" aria-label="Paste login sync token">
+                <button type="button" class="btn-outline" onclick="applyAuthToken()">Apply token</button>
+            </div>
+        </div>
+
+        <div class="ss">
             <h3>Export data</h3>
             <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Download a backup of all income and expense rows.</p>
             <div class="btn-row">
@@ -558,6 +575,69 @@ function changeCreds(){
     localStorage.setItem('ghk_a',JSON.stringify(a));
     showToast('Credentials updated.');
     document.getElementById('sOP').value='';document.getElementById('sNP').value='';document.getElementById('sNU').value='';
+    refreshAuthTokenUI();
+}
+
+// ══════════════════ AUTH SYNC TOKEN ══════════════════
+function b64uEncode(str){
+    const b64=btoa(unescape(encodeURIComponent(str)));
+    return b64.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function b64uDecode(b64u){
+    const b64=b64u.replace(/-/g,'+').replace(/_/g,'/');
+    const pad=b64.length%4===0?'':'='.repeat(4-(b64.length%4));
+    return decodeURIComponent(escape(atob(b64+pad)));
+}
+function getAuthToken(){
+    const a=getAuth();
+    const payload={v:1,u:a.u,p:a.p};
+    return b64uEncode(JSON.stringify(payload));
+}
+function parseAuthToken(token){
+    const raw=b64uDecode(String(token||'').trim());
+    const obj=JSON.parse(raw);
+    if(!obj||obj.v!==1||typeof obj.u!=='string'||typeof obj.p!=='string')throw new Error('bad_token');
+    if(!obj.u.trim()||!obj.p.trim())throw new Error('bad_token');
+    return {u:obj.u.trim(),p:obj.p.trim()};
+}
+async function copyToClipboard(text){
+    try{
+        if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(text);return true}
+    }catch(e){}
+    try{
+        const ta=document.createElement('textarea');
+        ta.value=text;ta.setAttribute('readonly','');
+        ta.style.position='fixed';ta.style.left='-9999px';ta.style.top='0';
+        document.body.appendChild(ta);
+        ta.focus();ta.select();
+        const ok=document.execCommand('copy');
+        document.body.removeChild(ta);
+        return ok;
+    }catch(e){return false}
+}
+function refreshAuthTokenUI(){
+    const out=document.getElementById('authTokenOut');
+    if(!out)return;
+    out.value=getAuthToken();
+}
+async function copyAuthToken(){
+    const t=document.getElementById('authTokenOut')?.value||'';
+    if(!t){showToast('No token to copy.');return}
+    const ok=await copyToClipboard(t);
+    showToast(ok?'Token copied. Paste it on the other device.':'Copy failed. Tap the token and copy manually.');
+}
+function applyAuthToken(){
+    const t=document.getElementById('authTokenIn')?.value||'';
+    if(!t.trim()){showToast('Paste a token first.');return}
+    try{
+        const a=parseAuthToken(t);
+        localStorage.setItem('ghk_a',JSON.stringify(a));
+        document.getElementById('authTokenIn').value='';
+        refreshAuthTokenUI();
+        showToast('Login synced on this device. You can sign out and log in with the updated password.');
+    }catch(e){
+        showToast('Invalid token. Make sure you copied the full text.');
+    }
 }
 
 // ══════════════════ DATA ══════════════════
@@ -1139,7 +1219,7 @@ function clearAll(){
 }
 
 // ── Init auth on load ──
-window.onload=()=>{getAuth()}
+window.onload=()=>{getAuth();refreshAuthTokenUI()}
 </script>
 </body>
 </html>
